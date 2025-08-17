@@ -7,19 +7,33 @@ from keras.models import load_model
 from keras.utils import img_to_array, load_img
 from PIL import Image
 import streamlit as st
+import os
+import gdown
 
 # Load the model
 FILE_ID = "1QQQlL932iw5duTdDe3HwxY0hkDCpjCFi"
 URL = f"https://drive.google.com/uc?id={FILE_ID}"
 LOCAL = "model_CNN2_L.h5"
 
+
 @st.cache_resource
-def load_model():
+def get_model():
+    """
+    Downloads the model from Google Drive and loads it.
+    """
+    # Check if the file exists and is not a corrupted placeholder from a previous failed download
     if not os.path.exists(LOCAL) or os.path.getsize(LOCAL) < 1024:
-        gdown.download(URL, LOCAL, quiet=False)
+        st.info(f"Downloading model from Google Drive to {LOCAL}...")
+        try:
+            gdown.download(URL, LOCAL, quiet=False)
+            st.success("Model downloaded successfully!")
+        except Exception as e:
+            st.error(f"Error downloading model. Please check the file ID and your network connection. Error: {e}")
+            return None
+
     return tf.keras.models.load_model(LOCAL)
 
-model = load_model()
+model = get_model()
 
 # Compile the model if needed
 model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
@@ -27,24 +41,36 @@ model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accur
 # Streamlit app setup
 st.title('What type of lung nodule is this?')
 st.write("Upload a CT scan image and we'll tell you what type of lung nodule the patient has.")
-image_input = st.file_uploader('Upload your image here:')
 
-button = st.button('Classify Image')
 
-if button and image_input is not None:
-    # Load and preprocess the image
-    img = Image.open(image_input).convert('L')  # Convert to grayscale
-    img = img.resize((224, 224))  # Resize image to 224x224
-    img = np.expand_dims(img_to_array(img), axis=0)  # Convert image to array and add batch dimension
-    img = img / 255.0  # Normalize the image
+if model:
+    # Compile the model if needed
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-    # Make a prediction
-    pred = model.predict(img)
+    # Streamlit app setup
+    st.title('What type of lung nodule is this?')
+    st.write("Upload a CT scan image and we'll tell you what type of lung nodule the patient has.")
+    image_input = st.file_uploader('Upload your image here:')
 
-    # Display the result
-    if np.argmax(pred, axis=1) == 0:
-        st.write('This nodule appears to be benign.')
-    elif np.argmax(pred, axis=1) == 1:
-        st.write('This nodule appears to be malignant.')
-    else:
-        st.write('There does not appear to be a nodule present.')
+    button = st.button('Classify Image')
+
+    if button and image_input is not None:
+        # Load and preprocess the image
+        img = Image.open(image_input).convert('L')  # Convert to grayscale
+        img = img.resize((224, 224))  # Resize image to 224x224
+        img = np.expand_dims(img_to_array(img), axis=0)  # Convert image to array and add batch dimension
+        img = img / 255.0  # Normalize the image
+
+        # Make a prediction
+        with st.spinner('Classifying...'):
+            pred = model.predict(img)
+
+        # Display the result
+        st.write("---")
+        st.subheader("Classification Result")
+        if np.argmax(pred, axis=1) == 0:
+            st.success('This nodule appears to be benign.')
+        elif np.argmax(pred, axis=1) == 1:
+            st.error('This nodule appears to be malignant.')
+        else:
+            st.info('There does not appear to be a nodule present.')
